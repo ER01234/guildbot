@@ -1,0 +1,3 @@
+tinydb>=4.8.2
+pydantic>=2.9.0
+vkbottle
