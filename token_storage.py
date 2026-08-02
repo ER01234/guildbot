@@ -28,15 +28,14 @@ class TokenStorage:
     def WarlocksTokens() -> List[str]:
         """Токены для проклятий (CurseOfPain, CurseOfLoot, CurseOfUnluck)."""
         return [
-            "wd1_live_FLMx6xqxNWw1OHfbvyQ8iRQWrKEMBXN96g4onS8l7ftDAVSvfqtF4Ma9VrPBej9Q",
-            "wd1_live_sOKDF1LM8MIVQmZjIjIZh6DGyUYEBbGfTdhTKeokwDKAn4VZZaGeFScgtDp9jGD0"
+            "wd1_live_FLMx6xqxNWw1OHfbvyQ8iRQWrKEMBXN96g4onS8l7ftDAVSvfqtF4Ma9VrPBej9Q"
         ]
 
     @staticmethod
     def PaladinsTokens() -> List[Tuple[str, str]]:
         """Токены для благословений паладинов (свет, огонь, воскрешение, очищение)."""
         return [
-            # Пока пусто — добавить, когда появятся паладины с WD токенами
+            ("wd1_live_0UrGlZpRIf473q3F4VzFNqpOe62ZitoZiGHfE3nStGTV8jBCU5Yp08yDRcWBCR1N", "в")
         ]
 
     @staticmethod

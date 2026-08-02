@@ -522,6 +522,9 @@ class UserHandler(BaseCommandHandler):
             strength_agility = 6 * level + 90 - (x + y)
             msg += f"\n\nДо капа:\nВыносливость - {endurance}\nСила+ловкость - {strength_agility}"
 
+        if not msg:
+            return f"Уровень пользователя @id{user_id}({name}) не изменился ({level})"
+
         return msg
 
     async def handle_tax_payment(self, message: Message) -> str:
@@ -778,6 +781,9 @@ class UserHandler(BaseCommandHandler):
         if not_found_in_db:
             response.append(f"Не найдено: {', '.join(not_found_in_db)}")
 
+        if not response:
+            return "Таких предметов нет в вашем списке 'ем'"
+
         return "\n".join(response)
 
     def handle_devour_plus(self, message: Message) -> str:
@@ -858,6 +864,9 @@ class UserHandler(BaseCommandHandler):
             response.append(f"Удалено: {', '.join(removed_items)}")
         if not_found_in_db:
             response.append(f"Не найдено: {', '.join(not_found_in_db)}")
+
+        if not response:
+            return "Таких предметов нет в вашем списке 'жру'"
 
         return "\n".join(response)
 

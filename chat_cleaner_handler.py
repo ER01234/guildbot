@@ -20,6 +20,12 @@ async def cleanup_answer(message: Message, *args, **kwargs):
     Работает из любого места — из bot.py и из внутренних хендлеров
     (эффекты, благословения и т.п.), где тоже используется message.answer.
     """
+    # VK отклоняет пустой текст (VKAPIError_100) — защита от пустых ответов хендлеров
+    text = kwargs.get("message", args[0] if args else None)
+    if text is None or not str(text).strip():
+        logger.warning("cleanup_answer: пропущена отправка пустого сообщения в peer %s", message.peer_id)
+        return None
+
     sent = await message.answer(*args, **kwargs)
     if sent is not None:
         conversation_message_id = getattr(sent, "conversation_message_id", None)
