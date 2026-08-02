@@ -1,5 +1,8 @@
+import asyncio
 import logging
+import os
 import random
+import time
 from decimal import Decimal, ROUND_HALF_UP
 from vkbottle.api import API
 from vkbottle.bot import Bot, Message
@@ -10,7 +13,7 @@ from well_dungeon_app_handler import WellDungeonAppHandler
 from crossroad_handler import CrossroadHandler
 from search_command_handler import SearchCommandHandler
 from user_handler import UserHandler
-from chat_cleaner_handler import ChatCleanerHandler, cleanup_answer
+from chat_cleaner_handler import cleanup_answer
 from token_storage import TokenStorage
 from buffs_handler import BuffsHandler
 from curses_handler import CursesHandler
@@ -20,6 +23,13 @@ from blesses_handler import BlessesHandler
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Watchdog для longpoll: если бот молчит дольше POLLING_STALE_SECONDS —
+# перезапускаем polling. После MAX_STALE_KICKS неудачных перезапусков
+# выходим из процесса, чтобы хостинг перезапустил бота.
+POLLING_STALE_SECONDS = 600   # 10 минут без единого ответа longpoll = завис
+POLLING_CHECK_SECONDS = 30    # проверка здоровья раз в 30 секунд
+MAX_STALE_KICKS = 3           # 3 перезапуска подряд без восстановления
+
 def main():
     api = API(token=TokenStorage.JibrillToken(), http_client=DevAiohttpClient())
     bot = Bot(api=api)
@@ -28,12 +38,10 @@ def main():
     app_handler = WellDungeonAppHandler()
     crossroad_handler = CrossroadHandler()
     user_handler = UserHandler()
-    chat_cleaner_handler = ChatCleanerHandler(api)
     search_handler = SearchCommandHandler(user_handler=user_handler)
     buffs_handler = BuffsHandler()
     curses_handler = CursesHandler()
     blesses_handler = BlessesHandler()
-
 
     async def _safe_tax_scheduler():
         try:
@@ -41,31 +49,88 @@ def main():
         except Exception as e:
             logger.exception("Tax scheduler crashed: %s", e)
 
-    bot.loop_wrapper.add_task(_safe_tax_scheduler())
+    async def _main():
+        state = {"last_poll": time.time(), "polling_task": None, "kick_requested": False}
+
+        # Сердцебиение: любой успешный ответ longpoll (даже пустой) = бот жив.
+        # Штатно longpoll отвечает раз в ~25 сек, поэтому 10 минут тишины = завис.
+        orig_get_event = bot.polling.get_event
+
+        async def _watched_get_event(server):
+            event = await orig_get_event(server)
+            state["last_poll"] = time.time()
+            return event
+
+        bot.polling.get_event = _watched_get_event
+
+        async def _watchdog():
+            stale_kicks = 0
+            while True:
+                try:
+                    await asyncio.sleep(POLLING_CHECK_SECONDS)
+                    idle = time.time() - state["last_poll"]
+                    if idle < POLLING_STALE_SECONDS:
+                        stale_kicks = 0
+                        continue
+
+                    stale_kicks += 1
+                    logger.error(
+                        "Longpoll молчит %.0f сек (попытка %d/%d) — перезапускаю polling",
+                        idle, stale_kicks, MAX_STALE_KICKS,
+                    )
+                    if stale_kicks >= MAX_STALE_KICKS:
+                        logger.error("Polling не восстановился — выходим из процесса, хостинг перезапустит бота")
+                        os._exit(1)
+
+                    task = state["polling_task"]
+                    if task is not None and not task.done():
+                        state["kick_requested"] = True
+                        task.cancel()
+                except Exception:
+                    logger.exception("Ошибка в polling watchdog")
+                    await asyncio.sleep(POLLING_CHECK_SECONDS)
+
+        asyncio.create_task(_safe_tax_scheduler())
+        asyncio.create_task(_watchdog())
+
+        # Цикл polling с автоперезапуском: зависший/упавший longpoll не убивает бота
+        while True:
+            task = asyncio.create_task(bot.run_polling())
+            state["polling_task"] = task
+            try:
+                await task
+            except asyncio.CancelledError:
+                if not state.pop("kick_requested", False):
+                    raise  # внешняя отмена (завершение) — выходим
+                logger.warning("Polling отменён watchdog-ом — перезапуск через 3 сек")
+            except Exception as e:
+                logger.exception("Polling упал: %s — перезапуск через 3 сек", e)
+            await asyncio.sleep(3)
 
     print("✅ Бот создан")
 
     @bot.on.message()
     async def handler(message: Message):
         text = message.text or ""
+        text_lower = text.strip().lower()
 
-        if text.strip() == "Ростик пидор":
+        if text_lower == "ростик пидор":
             await cleanup_answer(message,"А может ты пидор?")
             return
 
-        if text.strip() == "Рома программист":
+        if text_lower == "рома программист":
             await cleanup_answer(message,"Рома любит яйца огра, а ещё спекаться по субботам")
             return
 
-        if text.strip() == "Коля садовод":
+        if text_lower == "коля садовод":
             await cleanup_answer(message,"Да, он поливает ростки эссенциями")
             return
 
-        if text.strip() == "Жив?":
+        if text_lower in ("жив?", "жив"):
             await cleanup_answer(message,"Жив, цел, орёл")
             return
 
-        if text.strip() == "/команды":
+        if text_lower == "/команды":
             help_text = (
                 "Список команд:\n"
                 "/регистрация — регистрация в боте\n"
@@ -167,7 +232,7 @@ def main():
             return
 
     print("🚀 Бот запущен")
-    bot.run_forever()
+    asyncio.run(_main())
 
 if __name__ == "__main__":
     main()
