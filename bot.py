@@ -13,7 +13,7 @@ from well_dungeon_app_handler import WellDungeonAppHandler
 from crossroad_handler import CrossroadHandler
 from search_command_handler import SearchCommandHandler
 from user_handler import UserHandler
-from chat_cleaner_handler import cleanup_answer
+from chat_cleaner_handler import cleanup_answer, bind_api
 from token_storage import TokenStorage
 from buffs_handler import BuffsHandler
 from curses_handler import CursesHandler
@@ -32,12 +32,13 @@ MAX_STALE_KICKS = 3           # 3 перезапуска подряд без в�
 
 def main():
     api = API(token=TokenStorage.JibrillToken(), http_client=DevAiohttpClient())
+    bind_api(api)
     bot = Bot(api=api)
-    word_guesser_handler = WordGuesserHandler()
+    user_handler = UserHandler()
+    word_guesser_handler = WordGuesserHandler(user_handler=user_handler)
     mystery_handler = MysteryHandler()
     app_handler = WellDungeonAppHandler()
     crossroad_handler = CrossroadHandler()
-    user_handler = UserHandler()
     search_handler = SearchCommandHandler(user_handler=user_handler)
     buffs_handler = BuffsHandler()
     curses_handler = CursesHandler()
@@ -144,7 +145,6 @@ def main():
                 "/жру+ <предмет> — добавить в \"жру\"\n"
                 "/жру- <предмет> — удалить из \"жру\"\n"
                 "/кому — кто ест или жрет\n"
-                "/список еды - выводит всех, кто что-то ест или жрет\n"
                 "/баф <буквы> — бафы (у, а, з, ч, э, д, о, г, м)\n"
                 "/неудачи|боли|добычи - проклятия\n"
                 "/очищение|воскрешение|свет|огонь - благословения)\n"

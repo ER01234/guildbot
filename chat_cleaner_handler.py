@@ -30,33 +30,42 @@ async def cleanup_answer(message: Message, *args, **kwargs):
     if sent is not None:
         conversation_message_id = getattr(sent, "conversation_message_id", None)
         if conversation_message_id is not None:
+            # api берём из контекста сообщения (токен Jibrill), с фолбэком на _current_api
+            api = getattr(message, "api", None) or getattr(message, "ctx_api", None) or _current_api
             await schedule_delete(
                 peer_id=message.peer_id,
                 conversation_message_id=conversation_message_id,
+                api=api,
             )
     return sent
 
 
-async def schedule_delete(peer_id: int, conversation_message_id: int, delay_seconds: float = DELETE_DELAY_SECONDS):
+async def schedule_delete(
+    peer_id: int,
+    conversation_message_id: int,
+    delay_seconds: float = DELETE_DELAY_SECONDS,
+    api=None,
+):
     """
     Поставить собственное сообщение бота на удаление через delay_seconds.
-    Использует message.api из контекста сообщения (токен Jibrill).
+    api (токен Jibrill) передаётся из cleanup_answer или берётся из _current_api.
     """
     if conversation_message_id is None or conversation_message_id in _scheduled_message_ids:
         return
 
+    api = api or _current_api
     _scheduled_message_ids.add(conversation_message_id)
     asyncio.create_task(
-        _delete_after(peer_id, conversation_message_id, delay_seconds)
+        _delete_after(peer_id, conversation_message_id, delay_seconds, api)
     )
 
 
-async def _delete_after(peer_id: int, conversation_message_id: int, delay_seconds: float):
+async def _delete_after(peer_id: int, conversation_message_id: int, delay_seconds: float, api):
     try:
         if delay_seconds > 0:
             await asyncio.sleep(delay_seconds)
 
-        await _current_api.messages.delete(
+        await api.messages.delete(
             peer_id=peer_id,
             conversation_message_ids=[conversation_message_id],
             delete_for_all=True,

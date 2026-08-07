@@ -3,7 +3,8 @@ from base_command_handler import BaseCommandHandler
 from vkbottle.bot import Message
 
 class WordGuesserHandler(BaseCommandHandler):
-    def __init__(self):
+    def __init__(self, user_handler=None):
+        self.user_handler = user_handler
         self.word_database = [
             "грязный удар", "удар вампира", "сила теней", "слепота",
             "берсеркер", "проклятие тьмы", "целебный огонь", "заражение",
@@ -79,6 +80,43 @@ class WordGuesserHandler(BaseCommandHandler):
             "possible_count": len(possible),
         }
 
+    def build_food_report(self, word: str) -> str:
+        """Список ем/жру для предмета: кто ест и кто жрёт этот предмет."""
+        if self.user_handler is None:
+            return ""
+
+        item_name = self.user_handler.items_storage.get_item_name(word)
+        if not item_name:
+            return ""
+
+        eaters = []
+        devourers = []
+
+        for user_data in self.user_handler.users.values():
+            user_id = user_data.user_id
+            full_name = self.user_handler._build_user_name(user_data)
+            user_tag = f"@id{user_id} ({full_name})"
+
+            if item_name in user_data.eat_books:
+                eaters.append(user_tag)
+
+            if item_name in user_data.devour_books:
+                devourers.append(user_tag)
+
+        response = []
+        if eaters:
+            response.append("Едят:")
+            response.append("\n".join(eaters))
+
+        if devourers:
+            response.append("Жрут:")
+            response.append("\n".join(devourers))
+
+        if not response:
+            return ""
+
+        return f"\n{item_name}\n" + "\n".join(response)
+
     @staticmethod
     def extract_puzzle_from_message(text) -> Optional[str]:
         if "■" in text:
@@ -102,6 +140,10 @@ class WordGuesserHandler(BaseCommandHandler):
         if res["possible_count"] == 0:
             return f"Не найдено вариантов для {puzzle}"
         elif res["possible_count"] == 1:
-            return f"Ответ: {res['possible_words'][0]}"
+            word = res["possible_words"][0]
+            food_report = self.build_food_report(word)
+            if food_report:
+                return f"Ответ: {word}\n{food_report}"
+            return f"Ответ: {word}"
         else:
             return "Варианты:\n" + "\n".join(res["possible_words"])

@@ -209,41 +209,6 @@ class UserHandler(BaseCommandHandler):
         title = "Долги за прошлую неделю" if previous_week else "Не сдали налог"
         return title + ":\n" + "\n".join(debtors)
 
-    def _build_food_list_report(self) -> str:
-        sections = []
-
-        for item_name in self.items_storage.items.keys():
-            eaters = []
-            devourers = []
-
-            for user_data in self.users.values():
-                user_tag = f"@id{user_data.user_id} ({self._build_user_name(user_data)})"
-
-                if item_name in user_data.eat_books:
-                    eaters.append(user_tag)
-
-                if item_name in user_data.devour_books:
-                    devourers.append(user_tag)
-
-            if not eaters and not devourers:
-                continue
-
-            section = [item_name]
-            if eaters:
-                section.append("Едят:")
-                section.append("\n".join(eaters))
-
-            if devourers:
-                section.append("Жрут:")
-                section.append("\n".join(devourers))
-
-            sections.append("\n".join(section))
-
-        if not sections:
-            return "Никто ничего не ест и не жрет"
-
-        return "\n\n".join(sections)
-
     def _load_processed_messages(self) -> List[str]:
         if not os.path.exists(self.processed_messages_file):
             return []
@@ -360,8 +325,6 @@ class UserHandler(BaseCommandHandler):
             return self.handle_devour_minus(message)
         elif text_lower.startswith("/кому"):
              return self.handle_who_to(message)
-        elif text_lower == "/список еды":
-             return self.handle_food_list()
         elif text_lower == "/мой налог":
              return self.handle_my_tax(message)
         elif text_lower == "/твой налог":
@@ -909,9 +872,6 @@ class UserHandler(BaseCommandHandler):
             return f"\n{item_name} никто не ест и не жрет"
 
         return f"\n{item_name}\n".join(response)
-
-    def handle_food_list(self) -> str:
-        return self._build_food_list_report()
 
     def handle_my_tax(self, message: Message) -> str:
         user_id_str = str(message.from_id)
