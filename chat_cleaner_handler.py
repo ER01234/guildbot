@@ -7,7 +7,7 @@ from vkbottle.bot import Message
 
 logger = logging.getLogger(__name__)
 
-DELETE_DELAY_SECONDS = 300  # 5 минут
+DELETE_DELAY_SECONDS = 60  # 1 минута
 
 _scheduled_message_ids: set[int] = set()
 
