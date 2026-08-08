@@ -13,7 +13,7 @@ from well_dungeon_app_handler import WellDungeonAppHandler
 from crossroad_handler import CrossroadHandler
 from search_command_handler import SearchCommandHandler
 from user_handler import UserHandler
-from chat_cleaner_handler import cleanup_answer, bind_api
+from chat_cleaner_handler import cleanup_answer, bind_api, cleanup_user_message, is_game_command_for_cleanup
 from token_storage import TokenStorage
 from buffs_handler import BuffsHandler
 from curses_handler import CursesHandler
@@ -114,6 +114,12 @@ def main():
     async def handler(message: Message):
         text = message.text or ""
         text_lower = text.strip().lower()
+
+        # Игровые команды («Осмотреть», «Передать X золота/штук/штуки/осколков»)
+        # с ответом или пересылом — их обрабатывает сама игра, бот только удаляет
+        if is_game_command_for_cleanup(message):
+            await cleanup_user_message(message)
+            return
 
         if text_lower == "ростик пидор":
             await cleanup_answer(message,"А может ты пидор?")

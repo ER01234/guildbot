@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import re
 
 from vkbottle import VKAPIError
 from vkbottle.bot import Message
@@ -10,10 +11,16 @@ DELETE_DELAY_SECONDS = 300  # 5 минут
 
 _scheduled_message_ids: set[int] = set()
 
+# Игровые команды (обрабатывает сама игра, не бот): «Передать X золота/штук/штуки/осколков»
+GAME_COMMAND_TRANSFER_RE = re.compile(
+    r"передать\s+\d+\s+(золота|штук|штуки|осколков)"
+)
+
 
 async def cleanup_answer(message: Message, *args, **kwargs):
     """
-    Отправить ответ бота и поставить его на удаление через 5 минут.
+    Отправить ответ бота и поставить на удаление через 5 минут:
+    и сам ответ, и сообщение пользователя, на которое бот ответил.
     Бот не видит свои сообщения через longpoll, поэтому удаляем
     по conversation_message_id сразу после отправки.
 
@@ -28,16 +35,52 @@ async def cleanup_answer(message: Message, *args, **kwargs):
 
     sent = await message.answer(*args, **kwargs)
     if sent is not None:
+        # api берём из контекста сообщения (токен Jibrill), с фолбэком на _current_api
+        api = getattr(message, "api", None) or getattr(message, "ctx_api", None) or _current_api
+        # 1) сам ответ бота
         conversation_message_id = getattr(sent, "conversation_message_id", None)
         if conversation_message_id is not None:
-            # api берём из контекста сообщения (токен Jibrill), с фолбэком на _current_api
-            api = getattr(message, "api", None) or getattr(message, "ctx_api", None) or _current_api
             await schedule_delete(
                 peer_id=message.peer_id,
                 conversation_message_id=conversation_message_id,
                 api=api,
             )
+        # 2) сообщение пользователя, на которое бот ответил — централизованно
+        await cleanup_user_message(message, api=api)
     return sent
+
+
+async def cleanup_user_message(message: Message, api=None):
+    """
+    Поставить сообщение пользователя на удаление через DELETE_DELAY_SECONDS.
+    Вызывается централизованно из cleanup_answer (любое сообщение, на которое
+    бот ответил) и из bot.py для игровых команд («Осмотреть», «Передать …»).
+    Дедупликация — в schedule_delete (по conversation_message_id).
+    """
+    conversation_message_id = getattr(message, "conversation_message_id", None)
+    if conversation_message_id is None:
+        return
+    api = api or getattr(message, "api", None) or getattr(message, "ctx_api", None) or _current_api
+    await schedule_delete(
+        peer_id=message.peer_id,
+        conversation_message_id=conversation_message_id,
+        api=api,
+    )
+
+
+def is_game_command_for_cleanup(message: Message) -> bool:
+    """
+    Игровые команды, которые обрабатывает сама игра (не бот):
+    «Осмотреть» или «Передать X золота/штук/штуки/осколков».
+    Удаляем только если сообщение содержит ответ (reply_message)
+    или пересланное сообщение (fwd_messages).
+    """
+    if not (getattr(message, "reply_message", None) or getattr(message, "fwd_messages", None)):
+        return False
+    text = (message.text or "").strip().lower()
+    if text == "осмотреть":
+        return True
+    return GAME_COMMAND_TRANSFER_RE.fullmatch(text) is not None
 
 
 async def schedule_delete(
