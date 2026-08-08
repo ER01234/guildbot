@@ -1,6 +1,5 @@
 import asyncio
 import logging
-import re
 
 from vkbottle import VKAPIError
 from vkbottle.bot import Message
@@ -11,10 +10,8 @@ DELETE_DELAY_SECONDS = 60  # 1 минута
 
 _scheduled_message_ids: set[int] = set()
 
-# Игровые команды (обрабатывает сама игра, не бот): «Передать X золота/штук/штуки/осколков»
-GAME_COMMAND_TRANSFER_RE = re.compile(
-    r"передать\s+\d+\s+(золота|штук|штуки|осколков)"
-)
+# Игровые команды (обрабатывает сама игра, не бот): «Осмотреть» / «Передать»
+GAME_COMMANDS = ("осмотреть", "передать")
 
 
 async def cleanup_answer(message: Message, *args, **kwargs):
@@ -71,16 +68,14 @@ async def cleanup_user_message(message: Message, api=None):
 def is_game_command_for_cleanup(message: Message) -> bool:
     """
     Игровые команды, которые обрабатывает сама игра (не бот):
-    «Осмотреть» или «Передать X золота/штук/штуки/осколков».
+    «Осмотреть» или «Передать».
     Удаляем только если сообщение содержит ответ (reply_message)
     или пересланное сообщение (fwd_messages).
     """
     if not (getattr(message, "reply_message", None) or getattr(message, "fwd_messages", None)):
         return False
     text = (message.text or "").strip().lower()
-    if text == "осмотреть":
-        return True
-    return GAME_COMMAND_TRANSFER_RE.fullmatch(text) is not None
+    return text in GAME_COMMANDS
 
 
 async def schedule_delete(
