@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import time
+from enum import Enum
 from typing import List, Optional, Tuple, Deque
 from collections import deque
 
@@ -67,6 +68,18 @@ BUFF_SHORT_NAMES: dict[str, str] = {
 COOLDOWN_SECONDS = 60          # 1 минута между использованиями одного токена
 
 
+class BuffApplyResult(Enum):
+    """Результат попытки применения одного эффекта одним токеном."""
+    SUCCESS = "success"
+    INSUFFICIENT_VOICES = "insufficient_voices"      # у токена закончились голоса
+    CHARACTER_ON_COOLDOWN = "character_on_cooldown"  # цель на кулдауне (не зависит от токена)
+    TARGET_NOT_FOUND = "target_not_found"
+    CONDITIONS_NOT_MET = "conditions_not_met"
+    FORBIDDEN_SCOPE = "forbidden_scope"
+    INVALID_TOKEN = "invalid_token"
+    ERROR = "error"
+
+
 class BuffsHandler(BaseCommandHandler):
     """
     Обработчик команд бафов.
@@ -95,8 +108,8 @@ class BuffsHandler(BaseCommandHandler):
         return message.from_id
 
     async def _apply_single_buff(
-        self, effect_type: str, player_id: int, token: str, message: Message
-    ) -> bool:
+        self, effect_type: str, player_id: int, token: str
+    ) -> BuffApplyResult:
         try:
             await wd_client.apply_social_effect(
                 token=token,
@@ -104,31 +117,24 @@ class BuffsHandler(BaseCommandHandler):
                 effect_type=effect_type,
             )
         except WdInsufficientVoicesError:
-            await cleanup_answer(message,
-                f"Недостаточно Голосов Древних для {BUFF_RUSSIAN_NAMES.get(effect_type, effect_type)}"
-            )
-            return False
+            return BuffApplyResult.INSUFFICIENT_VOICES
         except WdOnCooldownError:
-            await cleanup_answer(message,
-                f"Персонаж на кулдауне для {BUFF_RUSSIAN_NAMES.get(effect_type, effect_type)}"
-            )
-            return False
+            return BuffApplyResult.CHARACTER_ON_COOLDOWN
         except WdTargetNotFoundError:
-            await cleanup_answer(message,"Цель не найдена в игре")
-            return False
+            return BuffApplyResult.TARGET_NOT_FOUND
         except WdConditionsNotMetError:
-            return False
+            return BuffApplyResult.CONDITIONS_NOT_MET
         except WdForbiddenScopeError:
             logger.warning("Token %s has no social_effects scope", token[:20])
-            return False
+            return BuffApplyResult.FORBIDDEN_SCOPE
         except WdInvalidTokenError:
             logger.warning("Invalid WD token: %s", token[:20])
-            return False
+            return BuffApplyResult.INVALID_TOKEN
         except Exception as e:
             logger.exception("Unexpected error applying buff %s: %s", effect_type, e)
-            return False
+            return BuffApplyResult.ERROR
 
-        return True
+        return BuffApplyResult.SUCCESS
 
     def _can_token_apply(self, token: Tuple[str, str, float], effect_type: str) -> bool:
         """Проверить, подходит ли токен для эффекта по буквам-фильтру."""
@@ -138,6 +144,83 @@ class BuffsHandler(BaseCommandHandler):
                 return letter in available_letters
         return False
 
+    def _mark_token_used(self, token: str) -> None:
+        """Обновить last_used timestamp токена после успешного применения."""
+        for i, (t, letters, _) in enumerate(self._tokens):
+            if t == token:
+                self._tokens[i] = (t, letters, time.monotonic())
+                break
+
+    async def _apply_effect_with_retry(
+        self, effect_type: str, player_id: int, message: Message
+    ) -> bool:
+        """Применить один эффект, перебирая токены и дожидаясь кулдауна, пока не выйдет."""
+        name = BUFF_RUSSIAN_NAMES.get(effect_type, effect_type)
+
+        active = [t for t in self._tokens if self._can_token_apply(t, effect_type)]
+        if not active:
+            await cleanup_answer(message, f"Нет апо для {name}")
+            return False
+
+        # Токены, которые для этого запроса уже бесполезны:
+        #  - нет голосов (за время ожидания кд голоса не появятся)
+        #  - неверный токен / нет scope / ошибка (постоянная проблема)
+        skipped: set[str] = set()
+
+        while True:
+            now = time.monotonic()
+
+            # Готовые к попытке: кд прошёл и токен ещё не отброшен
+            ready = [
+                t for t in active
+                if t[0] not in skipped and now - t[2] >= COOLDOWN_SECONDS
+            ]
+
+            for token, _, _ in ready:
+                result = await self._apply_single_buff(effect_type, player_id, token)
+
+                if result is BuffApplyResult.SUCCESS:
+                    self._mark_token_used(token)
+                    return True
+
+                if result in (
+                    BuffApplyResult.INSUFFICIENT_VOICES,
+                    BuffApplyResult.FORBIDDEN_SCOPE,
+                    BuffApplyResult.INVALID_TOKEN,
+                    BuffApplyResult.ERROR,
+                ):
+                    # Этот токен не подходит — пробуем следующий
+                    skipped.add(token)
+                    continue
+
+                if result is BuffApplyResult.CHARACTER_ON_COOLDOWN:
+                    await cleanup_answer(message, f"Персонаж на кулдауне для {name}")
+                    return False
+
+                if result is BuffApplyResult.TARGET_NOT_FOUND:
+                    await cleanup_answer(message, "Цель не найдена в игре")
+                    return False
+
+                if result is BuffApplyResult.CONDITIONS_NOT_MET:
+                    return False
+
+            # Никто из готовых не смог применить.
+            # Остались ли токены на кд, на которые есть смысл подождать?
+            now = time.monotonic()
+            pending = [
+                t for t in active
+                if t[0] not in skipped and now - t[2] < COOLDOWN_SECONDS
+            ]
+
+            if not pending:
+                await cleanup_answer(message, f"Не удалось применить {name}")
+                return False
+
+            earliest = min(pending, key=lambda t: t[2])
+            wait = COOLDOWN_SECONDS - (now - earliest[2])
+            if wait > 0:
+                await asyncio.sleep(wait)
+
     async def _process_user_request(
         self, effect_types: List[str], message: Message
     ):
@@ -145,50 +228,9 @@ class BuffsHandler(BaseCommandHandler):
         applied_effects: List[str] = []
 
         for effect_type in effect_types:
-            now = time.monotonic()
-
-            # Активные (подходящие по буквам)
-            active = [
-                t for t in self._tokens
-                if self._can_token_apply(t, effect_type)
-            ]
-            if not active:
-                await cleanup_answer(message,
-                    f"Нет апо для {BUFF_RUSSIAN_NAMES.get(effect_type, effect_type)}"
-                )
-                continue
-
-            # Свободные (прошёл кд)
-            free = [t for t in active if now - t[2] >= COOLDOWN_SECONDS]
-
-            if not free:
-                # Все на кд — ждём самый скорый
-                earliest = min(active, key=lambda t: t[2])
-                wait = COOLDOWN_SECONDS - (now - earliest[2])
-                await asyncio.sleep(max(wait, 0))
-                free = [t for t in active if now - t[2] >= COOLDOWN_SECONDS]
-                if not free:
-                    free = [earliest]
-
-            success = False
-            for token, letters, _ in free:
-                ok = await self._apply_single_buff(
-                    effect_type, player_id, token, message
-                )
-                if ok:
-                    # Обновляем timestamp
-                    for i, (t, l, _) in enumerate(self._tokens):
-                        if t == token:
-                            self._tokens[i] = (token, l, time.monotonic())
-                            break
-                    applied_effects.append(effect_type)
-                    success = True
-                    break
-
-            if not success:
-                await cleanup_answer(message,
-                    f"Не удалось применить {BUFF_RUSSIAN_NAMES.get(effect_type, effect_type)}"
-                )
+            ok = await self._apply_effect_with_retry(effect_type, player_id, message)
+            if ok:
+                applied_effects.append(effect_type)
 
         # Итоговое уведомление
         if applied_effects:
