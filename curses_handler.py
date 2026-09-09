@@ -101,9 +101,8 @@ class CursesHandler(BaseCommandHandler):
             return False
 
         effect_name = CURSE_RUSSIAN_NAMES.get(curse_type, curse_type)
-        mention = f"@id{message.from_id}"
 
-        await cleanup_answer(message,f"{effect_name} наложено на {mention}")
+        await cleanup_answer(message,f"{effect_name} наложено")
         return True
 
     async def _process_user_request(self, curse_type: str, message: Message):

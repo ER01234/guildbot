@@ -106,9 +106,8 @@ class BlessesHandler(BaseCommandHandler):
 
         # Успех
         effect_name = BLESS_RUSSIAN_NAMES.get(bless_type, bless_type)
-        mention = f"@id{message.from_id}"
 
-        await cleanup_answer(message,f"{effect_name} применено для {mention}")
+        await cleanup_answer(message,f"{effect_name} применено")
         return True
 
     async def _process_user_request(self, bless_type: str, message: Message):

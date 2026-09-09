@@ -234,11 +234,9 @@ class BuffsHandler(BaseCommandHandler):
 
         # Итоговое уведомление
         if applied_effects:
-            mention = f"@id{message.from_id}"
-
             names = [BUFF_SHORT_NAMES.get(e, e) for e in applied_effects]
             await cleanup_answer(message,
-                f"Благословения применены для {mention}: {', '.join(names)}"
+                f"Благословения применены: {', '.join(names)}"
             )
 
     async def _queue_processor(self):

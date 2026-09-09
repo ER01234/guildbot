@@ -9,6 +9,7 @@ from decimal import Decimal, ROUND_HALF_UP
 from typing import Optional, Dict, List
 from vkbottle.bot import Message
 from vkbottle import VKAPIError
+from chat_cleaner_handler import cleanup_answer
 from base_command_handler import BaseCommandHandler
 from items_storage import ItemsStorage
 from user_repository import UserRepository, UserDocument
@@ -27,6 +28,7 @@ def get_required_tax(level: int):
 
 
 TAX_GRACE_PERIOD_SECONDS = 7 * 24 * 60 * 60
+PROFILE_REMINDER_DAYS = 5  # напоминаем показать профиль, если не обновлял дольше
 
 
 class UserHandler(BaseCommandHandler):
@@ -166,11 +168,25 @@ class UserHandler(BaseCommandHandler):
         return None, f"Пользователь @id{target_id} не зарегистрирован. Используйте /регистрация"
 
     def _build_debtors_report(self, *, previous_week: bool = False) -> str:
-        debtors = []
+        now = time.time()
+        debtors: List[str] = []
+        stale_profiles: List[str] = []
 
         for uid_str, user in self.users.items():
             if user.tax_free:
                 continue
+
+            # Профиль не обновлялся дольше PROFILE_REMINDER_DAYS —
+            # напоминаем всем, а не только должникам
+            last_show = user.last_show
+            if last_show is None:
+                last_show = -now
+
+            days_from_last_show = (now - last_show) / 60 / 60 / 24
+            profile_stale = days_from_last_show >= PROFILE_REMINDER_DAYS
+
+            user_name = self._build_user_name(user)
+            mention = f"@id{uid_str} ({user_name})"
 
             balance_gold = user.user_tax_gold
             balance_trophies = user.user_tax_trophies
@@ -186,28 +202,32 @@ class UserHandler(BaseCommandHandler):
             left_gold = max(0, -balance_gold)
             left_trophies = max(0, -balance_trophies)
 
-            last_show = user.last_show
-            if last_show is None:
-                last_show = -time.time()
-
-            days_from_last_show = (time.time() - last_show) / 60 / 60 / 24
-            profile = "Покажи профиль" if days_from_last_show >= 5 else ""
-
-            user_name = self._build_user_name(user)
-            mention = f"@id{uid_str} ({user_name})"
+            profile_marker = " Покажи профиль" if profile_stale else ""
 
             if user.buffer_tax_free:
                 if left_trophies > 0:
-                    debtors.append(f"{mention} (Долг: {left_trophies} трофеев) {profile}".strip())
+                    debtors.append(
+                        f"{mention} (Долг: {left_trophies} трофеев){profile_marker}"
+                    )
+                elif profile_stale:
+                    stale_profiles.append(f"{mention} Покажи профиль")
             else:
                 if left_gold > 0 or left_trophies > 0:
-                    debtors.append(f"{mention} (Долг: {left_gold} золота, {left_trophies} трофеев) {profile}".strip())
+                    debtors.append(
+                        f"{mention} (Долг: {left_gold} золота, {left_trophies} трофеев){profile_marker}"
+                    )
+                elif profile_stale:
+                    stale_profiles.append(f"{mention} Покажи профиль")
 
-        if not debtors:
+        sections = []
+        if debtors:
+            title = "Долги за прошлую неделю" if previous_week else "Не сдали налог"
+            sections.append(title + ":\n" + "\n".join(debtors))
+        if stale_profiles:
+            sections.append("Давно не обновляли профиль:\n" + "\n".join(stale_profiles))
+        if not sections:
             return "Все сдали налог"
-
-        title = "Долги за прошлую неделю" if previous_week else "Не сдали налог"
-        return title + ":\n" + "\n".join(debtors)
+        return "\n\n".join(sections)
 
     def _load_processed_messages(self) -> List[str]:
         if not os.path.exists(self.processed_messages_file):
@@ -330,9 +350,9 @@ class UserHandler(BaseCommandHandler):
         elif text_lower == "/твой налог":
              return self.handle_forwarded_tax(message)
         elif text_lower == "/кто не сдал":
-             return self.handle_who_not_paid(message)
+             return await self.handle_who_not_paid(message)
         elif text_lower == "/должники":
-             return self.handle_debtors(message)
+             return await self.handle_debtors(message)
         elif text_lower == "/налог":
              return await self.handle_tax_payment(message)
         elif text_lower == "/налог-":
@@ -890,17 +910,21 @@ class UserHandler(BaseCommandHandler):
 
         return self._format_tax_balance(user_data)
 
-    def handle_who_not_paid(self, message: Message) -> str:
+    async def handle_who_not_paid(self, message: Message) -> Optional[str]:
         if message.from_id != 391196432:
             return "Проверка налога доступна только главгаду"
 
-        return self._build_debtors_report(previous_week=False)
+        report = self._build_debtors_report(previous_week=False)
+        await cleanup_answer(message, report, keep_message=True)
+        return None
 
-    def handle_debtors(self, message: Message) -> str:
+    async def handle_debtors(self, message: Message) -> Optional[str]:
         if message.from_id != 391196432:
             return "Проверка налога доступна только главгаду"
 
-        return self._build_debtors_report(previous_week=True)
+        report = self._build_debtors_report(previous_week=True)
+        await cleanup_answer(message, report, keep_message=True)
+        return None
 
     async def handle_free_from_tax(self, message: Message) -> str:
         if message.from_id != 391196432:
