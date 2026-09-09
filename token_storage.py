@@ -21,7 +21,6 @@ class TokenStorage:
         (wd_token, доступные_буквы)
         """
         return [
-            ("wd1_live_WDORvPQ1S5FASXEeg0pr6OxEDUjbb2LXqRuHkdnbaJI5cEd8PK5G88M8KKgtQaJX", "эчуаз"),
             ("wd1_live_qnQ40yZAg8T4U7EkSI70dYuWP1TDA62lZDxvAyGdKbQUgFvcEKpuG6urBnyz7wWY", "эчуаз"),
             ("wd1_live_FLMx6xqxNWw1OHfbvyQ8iRQWrKEMBXN96g4onS8l7ftDAVSvfqtF4Ma9VrPBej9Q", "чоуаз")
         ]
