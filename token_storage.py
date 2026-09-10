@@ -1,10 +1,24 @@
 from typing import List, Tuple
 
+from local_secrets import get_secret
+
+
+def _pairs(name: str) -> List[Tuple[str, str]]:
+    """Пары (wd_token, буквы-фильтр) из секретов."""
+    raw = get_secret(name, []) or []
+    pairs: List[Tuple[str, str]] = []
+    for item in raw:
+        if isinstance(item, (list, tuple)) and len(item) == 2:
+            pairs.append((str(item[0]), str(item[1])))
+    return pairs
+
 
 class TokenStorage:
     """
-    Хранилище WellDungeon API токенов для разных типов эффектов.
-    Каждый токен — строка вида wd1_live_64_random_chars...
+    Хранилище токенов (VK и WellDungeon API).
+
+    В коде значения НЕ хранятся: берутся из переменных окружения или из
+    data/secrets.json (файл в .gitignore — в репозиторий не попадает).
     Второй элемент кортежа — строка-фильтр, какие эффекты доступны персонажу
     (для минимизации лишних API-вызовов).
     """
@@ -12,31 +26,25 @@ class TokenStorage:
     @staticmethod
     def JibrillToken() -> str:
         """VK токен бота (не WD)."""
-        return "vk1.a.uvPjLiil3CdUjXzVrpOcTyWe_lZpSA77TVgfa6fJDyAD1br8B3Dqv07LDoh5067VWqqAYth9QbHX8-DeKKw2lA62CbVTAYyXuf-Um0ji4t6E13pQH9zpvQaGx2brPBtydn89gdTzdl7st2fewIkA6-N1vendSp36-EUt6mzsjKP-qvzbutRHiw-bRvenYrvIytPIn1_jKRMMpeubi1TkrA"
+        return str(get_secret("VK_JIBRILL_TOKEN", "") or "")
 
     @staticmethod
     def BuffersTokens() -> List[Tuple[str, str]]:
-        """
-        Токены для бафов (BlessOfAttack, BlessOfDefense, BlessOfLuck, расовые).
-        (wd_token, доступные_буквы)
-        """
-        return [
-            ("wd1_live_qnQ40yZAg8T4U7EkSI70dYuWP1TDA62lZDxvAyGdKbQUgFvcEKpuG6urBnyz7wWY", "эчуаз"),
-            ("wd1_live_FLMx6xqxNWw1OHfbvyQ8iRQWrKEMBXN96g4onS8l7ftDAVSvfqtF4Ma9VrPBej9Q", "чоуаз")
-        ]
+        """Токены для бафов (BlessOfAttack, BlessOfDefense, BlessOfLuck, расовые)."""
+        return _pairs("WD_BUFFERS_TOKENS")
 
     @staticmethod
     def WarlocksTokens() -> List[str]:
         """Токены для проклятий (CurseOfPain, CurseOfLoot, CurseOfUnluck)."""
-        return []
+        raw = get_secret("WD_WARLOCKS_TOKENS", []) or []
+        return [str(token) for token in raw]
 
     @staticmethod
     def PaladinsTokens() -> List[Tuple[str, str]]:
         """Токены для благословений паладинов (свет, огонь, воскрешение, очищение)."""
-        return [
-            ("wd1_live_0UrGlZpRIf473q3F4VzFNqpOe62ZitoZiGHfE3nStGTV8jBCU5Yp08yDRcWBCR1N", "в")
-        ]
+        return _pairs("WD_PALADINS_TOKENS")
 
     @staticmethod
     def AutopostToken() -> str:
-        return ""
+        """Токен автопоста (пустая строка/список = выключено)."""
+        return str(get_secret("AUTOPOST_TOKEN", "") or "")

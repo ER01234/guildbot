@@ -158,6 +158,11 @@ class YandexGPTHandler(BaseCommandHandler):
                 # Вызываем AI
                 answer = await _call_ai_studio(query, history=context)
 
+                # Пустой ответ = ключ не задан или API промолчал.
+                # Молчим, чтобы не отправлять в чат пустое сообщение "💬 ".
+                if not answer:
+                    return None
+
                 # Сохраняем пару (вопрос → ответ)
                 self.history_storage.add_pair(user_name, query, answer)
 

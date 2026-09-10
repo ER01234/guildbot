@@ -32,6 +32,15 @@ POLLING_CHECK_SECONDS = 30    # проверка здоровья раз в 30 �
 MAX_STALE_KICKS = 3           # 3 перезапуска подряд без восстановления
 
 def main():
+    # Секреты берутся из переменных окружения или из data/secrets.json
+    # (образец структуры — в докстринге local_secrets.py)
+    if not TokenStorage.JibrillToken():
+        logger.error(
+            "VK_JIBRILL_TOKEN не задан: нет переменной окружения и не найден data/secrets.json — "
+            "боту нечем авторизоваться в VK. Файл-образец описан в local_secrets.py."
+        )
+        raise SystemExit(1)
+
     api = API(token=TokenStorage.JibrillToken(), http_client=DevAiohttpClient())
     bind_api(api)
     bot = Bot(api=api)
