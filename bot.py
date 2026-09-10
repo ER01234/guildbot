@@ -18,6 +18,7 @@ from token_storage import TokenStorage
 from buffs_handler import BuffsHandler
 from curses_handler import CursesHandler
 from blesses_handler import BlessesHandler
+from yandex_gpt_handler import YandexGPTHandler
 
 
 logging.basicConfig(level=logging.INFO)
@@ -43,6 +44,7 @@ def main():
     buffs_handler = BuffsHandler()
     curses_handler = CursesHandler()
     blesses_handler = BlessesHandler()
+    yandex_gpt_handler = YandexGPTHandler()
 
     async def _safe_tax_scheduler():
         try:
@@ -218,6 +220,12 @@ def main():
         if res_app is not None:
              await cleanup_answer(message,res_app)
              return
+
+        # YandexGPT интеграция (обращения "Джи" или "Джибрилл")
+        res_gpt = await yandex_gpt_handler.handle(message)
+        if res_gpt is not None:
+            await cleanup_answer(message,res_gpt)
+            return
 
         if not message.fwd_messages:
             return
