@@ -14,7 +14,9 @@ _scheduled_message_ids: set[int] = set()
 GAME_COMMANDS = ("осмотреть", "передать")
 
 
-async def cleanup_answer(message: Message, *args, keep_message: bool = False, **kwargs):
+async def cleanup_answer(
+    message: Message, *args, keep_message: bool = False, keep_user_message: bool = False, **kwargs
+):
     """
     Отправить ответ бота и поставить на удаление через DELETE_DELAY_SECONDS:
     и сам ответ, и сообщение пользователя, на которое бот ответил.
@@ -22,7 +24,10 @@ async def cleanup_answer(message: Message, *args, keep_message: bool = False, **
     по conversation_message_id сразу после отправки.
 
     keep_message=True — ответ бота НЕ удаляется (например, списки должников),
-    остаётся в чате навсегда. Сообщение пользователя всё равно убирается.
+    остаётся в чате навсегда.
+
+    keep_user_message=True — сообщение пользователя тоже остаётся (диалог
+    с Джи: вопрос и ответ видны в чате, ничего не пропадает через минуту).
 
     Работает из любого места — из bot.py и из внутренних хендлеров
     (эффекты, благословения и т.п.), где тоже используется message.answer.
@@ -47,7 +52,8 @@ async def cleanup_answer(message: Message, *args, keep_message: bool = False, **
                     api=api,
                 )
         # 2) сообщение пользователя, на которое бот ответил — централизованно
-        await cleanup_user_message(message, api=api)
+        if not keep_user_message:
+            await cleanup_user_message(message, api=api)
     return sent
 
 

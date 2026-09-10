@@ -231,9 +231,10 @@ def main():
              return
 
         # YandexGPT интеграция (обращения "Джи" или "Джибрилл")
+        # Диалог с Джи не чистится: и ответ ассистента, и вопрос остаются в чате
         res_gpt = await yandex_gpt_handler.handle(message)
         if res_gpt is not None:
-            await cleanup_answer(message,res_gpt)
+            await cleanup_answer(message, res_gpt, keep_message=True, keep_user_message=True)
             return
 
         if not message.fwd_messages:
