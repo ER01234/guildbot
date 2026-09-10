@@ -58,6 +58,7 @@ def _load_file() -> Dict[str, Any]:
         if isinstance(loaded, dict):
             data = loaded
             _loaded_from = path
+            logger.info("Секреты загружены из %s", path)
             break
         logger.error("%s: ожидался объект JSON, получено %s", path, type(loaded).__name__)
 
